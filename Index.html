@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Creditum Central</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f2f6ff;
+      margin: 0; padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding-top: 20px;
+    }
+    h1 { color: #222; margin-bottom: 20px; }
+    #app, #payment-area, #pin-section, #topup-section { display: none; }
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      max-width: 350px;
+      width: 100%;
+      margin-bottom: 15px;
+    }
+    input, select, button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      margin-bottom: 15px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+    .balance {
+      background: #d1e7dd;
+      color: #0f5132;
+      font-size: 18px;
+      text-align: center;
+      padding: 15px;
+      border-radius: 10px;
+      margin: 15px 0;
+      position: relative;
+    }
+    .tick {
+      font-size: 50px;
+      color: green;
+      animation: pop 0.4s ease-out;
+    }
+    @keyframes pop {
+      0% { transform: scale(0); }
+      100% { transform: scale(1); }
+    }
+    #log { max-height: 200px; overflow-y: scroll; background: #f9f9f9; padding: 10px; border-radius: 10px; }
+    .eye-icon {
+      position: absolute;
+      right: 15px;
+      top: 55%;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>Creditum Central</h1>
+
+  <div id="login" class="card">
+    <input type="text" id="name" placeholder="Enter your name">
+    <input type="text" id="id" placeholder="Enter your 12-character ID">
+    <button onclick="login()">Sign In</button>
+  </div>
+
+  <div id="pin-section" class="card">
+    <input type="password" id="set-pin" maxlength="6" placeholder="Set 6-digit PIN">
+    <span class="eye-icon" onclick="togglePin('set-pin')">👁️</span>
+    <button onclick="savePin()">Save PIN</button>
+  </div>
+
+  <div id="app" class="card">
+    <div class="balance" id="balance-display">Balance: ₹0 CR</div>
+    <input type="password" id="pin-check" maxlength="6" placeholder="Enter PIN to pay">
+    <span class="eye-icon" onclick="togglePin('pin-check')">👁️</span>
+    <input type="number" id="amount" placeholder="Amount to pay (min 1)">
+    <select id="receiver"></select>
+    <button onclick="pay()">Pay</button>
+    <div id="tick" class="tick" style="display:none;">✔️</div>
+  </div>
+
+  <div id="topup-section" class="card">
+    <input type="text" id="topup-code" placeholder="Enter 16-digit Top-up Code">
+    <button onclick="topUp()">Top Up</button>
+  </div>
+
+  <div class="card">
+    <h3>Transaction Log</h3>
+    <div id="log"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getDatabase, ref, set, get, update, onValue, child } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDEH1H8SQxAsmDjNmtVSmxUBsAxhkknvMk",
+      authDomain: "creditum-central.firebaseapp.com",
+      databaseURL: "https://creditum-central-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "creditum-central",
+      storageBucket: "creditum-central.appspot.com",
+      messagingSenderId: "573826473683",
+      appId: "1:573826473683:web:dfbbefb92d91cc77993e26",
+      measurementId: "G-K50RWVLTYD"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const users = {
+      "Aarav": "A39K-F1D7-Z8Q2",
+      "Rajni Bala": "ABCD-1234-EF17",
+      "Akshit": "AS08-91PS-MK18",
+      "Rohit Sharma": "Z4N1-49C2-AGM3",
+      "Hariti Sharma": "B1F6-U9Z4-R5L0",
+      "Ranjana Devi": "H6W8-J2T5-KKX9",
+      "Samridhi": "2S47-G0R3-J5N1",
+      "Amit Kumar": "X3M4-D7K2-Y9S8"
+    };
+
+    let currentUser = "";
+
+    function login() {
+      const name = document.getElementById('name').value.trim();
+      const id = document.getElementById('id').value.trim();
+      if (users[name] && users[name] === id) {
+        currentUser = name;
+        document.getElementById("login").style.display = "none";
+        const pinRef = ref(db, 'pins/' + currentUser);
+        get(pinRef).then(snap => {
+          if (snap.exists()) {
+            document.getElementById("app").style.display = "block";
+            document.getElementById("topup-section").style.display = "block";
+            loadData();
+          } else {
+            document.getElementById("pin-section").style.display = "block";
+          }
+        });
+      } else {
+        alert("Invalid credentials");
+      }
+    }
+
+    function savePin() {
+      const pin = document.getElementById('set-pin').value;
+      if (pin.length !== 6 || isNaN(pin)) return alert("Enter valid 6-digit PIN");
+      set(ref(db, 'pins/' + currentUser), pin);
+      set(ref(db, 'balances/' + currentUser), 1000);
+      document.getElementById("pin-section").style.display = "none";
+      document.getElementById("app").style.display = "block";
+      document.getElementById("topup-section").style.display = "block";
+      loadData();
+    }
+
+    function loadData() {
+      // Load balance
+      onValue(ref(db, 'balances/' + currentUser), snap => {
+        const bal = snap.val() || 0;
+        document.getElementById("balance-display").innerText = "₹" + bal + " CR";
+      });
+
+      // Load log
+      onValue(ref(db, 'logs'), snap => {
+        const data = snap.val();
+        let logHtml = "";
+        for (let key in data) {
+          logHtml += `<div>${data[key]}</div>`;
+        }
+        document.getElementById("log").innerHTML = logHtml;
+      });
+
+      // Load receiver list
+      const select = document.getElementById("receiver");
+      select.innerHTML = "";
+      for (let name in users) {
+        if (name !== currentUser) {
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.innerText = name;
+          select.appendChild(opt);
+        }
+      }
+    }
+
+    function togglePin(id) {
+      const input = document.getElementById(id);
+      input.type = input.type === "password" ? "text" : "password";
+    }
+
+    async function pay() {
+      const amount = parseInt(document.getElementById('amount').value);
+      const receiver = document.getElementById('receiver').value;
+      const pin = document.getElementById('pin-check').value;
+
+      if (isNaN(amount) || amount < 1) return alert("Invalid amount");
+
+      const pinSnap = await get(ref(db, 'pins/' + currentUser));
+      if (!pinSnap.exists() || pinSnap.val() !== pin) return alert("Wrong PIN");
+
+      const balSnap = await get(ref(db, 'balances/' + currentUser));
+      const myBal = balSnap.val() || 0;
+      if (myBal < amount) return alert("Not enough balance");
+
+      const recvBalSnap = await get(ref(db, 'balances/' + receiver));
+      const recvBal = recvBalSnap.val() || 0;
+
+      await update(ref(db), {
+        [`balances/${currentUser}`]: myBal - amount,
+        [`balances/${receiver}`]: recvBal + amount,
+        [`logs/${Date.now()}`]: `${currentUser} paid ₹${amount} CR to ${receiver} at ${new Date().toLocaleString()}`
+      });
+
+      document.getElementById("tick").style.display = "block";
+      setTimeout(() => document.getElementById("tick").style.display = "none", 1000);
+    }
+
+    async function topUp() {
+      const code = document.getElementById("topup-code").value.trim();
+      if (code.length !== 16) return alert("Invalid code");
+
+      const codeRef = ref(db, 'topup/' + code);
+      const used = await get(codeRef);
+      if (used.exists()) return alert("Code already used!");
+
+      const balSnap = await get(ref(db, 'balances/' + currentUser));
+      const bal = balSnap.val() || 0;
+      await set(codeRef, true);
+      await set(ref(db, 'balances/' + currentUser), bal + 100);
+      alert("Top-up successful +100 CR!");
+    }
+  </script>
+</body>
+</html>
